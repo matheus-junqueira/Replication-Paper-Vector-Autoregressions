@@ -1,0 +1,1348 @@
+#########################################################################################################
+# Course: Forecasting
+#########################################################################################################
+# Organize the working enviroment
+#########################################################################################################
+# Cleaning the working environment
+#########################################################################################################
+
+rm(list = ls())
+
+#########################################################################################################
+## Load the required packages
+#########################################################################################################
+
+library(data.table)
+library(writexl)
+library(ggplot2)
+library(dplyr)
+library(AER)
+library(lmtest)
+library(tseries)
+library(urca)
+library(dynlm)
+library(sandwich)
+library(readxl)
+library(forecast)
+library(xts)
+library(vars)
+library(zoo)
+library(timeSeries)
+library(quantmod)
+library(mFilter)
+library(seasonal)
+library(lubridate)
+library(car)
+library(xtable)
+library(stargazer)
+
+#########################################################################################################
+## Clean the data
+#########################################################################################################
+
+data <- fread("SW2001_br_commodity.csv")
+colnames(data) <- c("date", "unemployment", "inflation", "interest_rate", "ic_br")
+
+#########################################################################################################
+## Descriptive statistics
+#########################################################################################################
+
+data_summary <- summary(data)
+latex_summary <- xtable(data_summary)
+sink("figures/summary.txt")
+print(latex_summary, type = "latex", table.placement = "ht")
+sink()
+
+#########################################################################
+# Converting to time series
+#########################################################################
+# Define and looking at inflation variable
+#########################################################################
+
+
+Inflation <- ts(data[, 3], frequency = 4)
+Inflation
+
+Inflation.ts <- ts(Inflation, frequency=4, start=c(1999,2))
+Inflation.ts
+is.ts(Inflation.ts)
+
+#########################################################################
+# Plotting Inflation
+#########################################################################
+
+pdf("figures/inflation_plot.pdf", width=10, height=7)
+ts.plot(Inflation.ts, main="", ylab="Percentage %", xlab="", col="blue", lwd=0.5)
+title(main="Inflation", line=-1)
+dev.off()
+
+#########################################################################
+# Unemployment
+#########################################################################
+
+unemployment <- ts(data[, 2], frequency = 4)
+unemployment
+
+unemployment.ts <- ts(unemployment, frequency=4, start=c(1999,2))
+unemployment.ts
+is.ts(unemployment.ts)
+
+#########################################################################
+# Plotting Unemployment
+#########################################################################
+
+pdf("figures/unemployment_plot.pdf", width=10, height=7)
+ts.plot(unemployment.ts, main="", ylab="Percentage %", xlab="", col="blue", lwd=0.5)
+title(main="Unemployment", line=-1)
+dev.off()
+
+#########################################################################
+# Interest Rate
+#########################################################################
+
+interest_rate <- ts(data[, 4], frequency = 4)
+interest_rate
+
+interest_rate.ts <- ts(interest_rate, frequency=4, start=c(1999,2))
+interest_rate.ts
+is.ts(interest_rate.ts)
+
+#########################################################################
+# Plotting Interest Rate
+#########################################################################
+
+pdf("figures/interest_rate_plot.pdf", width=10, height=7)
+ts.plot(interest_rate.ts, main="", ylab="Percentage %", xlab="", col="blue", lwd=0.5)
+title(main="Interest Rate - Selic", line=-1)
+dev.off()
+
+#########################################################################
+# Icb-br
+#########################################################################
+
+ic_br <- ts(data[, 5], frequency = 4)
+ic_br
+
+ic_br.ts <- ts(ic_br, frequency=4, start=c(1999,2))
+ic_br.ts
+is.ts(ic_br.ts)
+
+#########################################################################
+# Plotting Icb-br
+#########################################################################
+
+pdf("figures/ic_br_plot.pdf", width=10, height=7)
+ts.plot(ic_br.ts, main="", ylab="Percentage %", xlab="", col="blue", lwd=0.5)
+title(main="ICB-BR", line=-1)
+dev.off()
+
+#########################################################################
+# Unit Root Analysis
+#########################################################################
+
+#########################################################################
+# Inflation
+########################################################################
+
+
+pdf(file = "figures/figure_autocorrelation_inflation.pdf", width = 11, height = 8.5)
+Acf(Inflation.ts, ylab = "Autocorrelation", main = "Inflation - IPCA")
+dev.off()
+
+pdf(file = "figures/figure_partial_autocorrelation_inflation.pdf", width = 11, height = 8.5)
+pacf(Inflation.ts, ylab = "Partial Autocorrelation", main = "Inflation - IPCA")
+dev.off()
+
+
+ur.kpss(Inflation.ts, type = "tau")@teststat #stationary
+ur.kpss(Inflation.ts, type ="tau")@cval #stationary 
+
+inflation_trend <- ur.df(
+  y = Inflation.ts,
+  type = "trend",
+  selectlags = "BIC"
+)
+
+print(summary(inflation_trend))
+
+summary_adf <- summary(inflation_trend)
+adf_matrix <- matrix(NA, nrow = 3, ncol = 4)
+colnames(adf_matrix) <- c("Statistic","Critical Value (1%)", "Critical Value (5%)", "Critical Value (10%)")
+row.names(adf_matrix) <- c("tau3", "phi2", "phi3")
+
+adf_matrix[1,1] <- inflation_trend@teststat[1,1]
+adf_matrix[2,1] <- inflation_trend@teststat[1,2]
+adf_matrix[3,1] <- inflation_trend@teststat[1,3]
+adf_matrix[1,2] <- summary_adf@cval[1,1]
+adf_matrix[1,3] <- summary_adf@cval[1,2]
+adf_matrix[1,4] <- summary_adf@cval[1,3]
+adf_matrix[2,2] <- summary_adf@cval[2,1]
+adf_matrix[2,3] <- summary_adf@cval[2,2]
+adf_matrix[2,4] <- summary_adf@cval[2,3]
+adf_matrix[3,2] <- summary_adf@cval[3,1]
+adf_matrix[3,3] <- summary_adf@cval[3,2]
+adf_matrix[3,4] <- summary_adf@cval[3,3]
+
+print(adf_matrix)
+
+table_latex <- xtable(
+  adf_matrix,
+  caption = "ADF Test with drift and time trend - Inflation",
+  label = "ADF Test",
+  align = rep("c", ncol(adf_matrix) + 1),
+  digits = 3
+)
+
+print(table_latex, file = "figures/table_adf_test_inflation.txt")
+
+#########################################################################
+# Unemployment
+########################################################################
+
+pdf(file = "figures/figure_autocorrelation_unemployment.pdf", width = 11, height = 8.5)
+Acf(unemployment.ts, ylab = "Autocorrelation", main = "Unemployment")
+dev.off()
+
+pdf(file = "figures/figure_partial_autocorrelation_unemployment.pdf", width = 11, height = 8.5)
+pacf(unemployment.ts, ylab = "Partial Autocorrelation", main = "Unemployment")
+dev.off()
+
+ur.kpss(unemployment.ts, type = "tau")@teststat # not stationary
+ur.kpss(unemployment.ts, type ="tau")@cval # not stationary
+
+unemployment_trend <- ur.df(
+  y = unemployment.ts,
+  type = "trend",
+  selectlags = "BIC"
+)
+
+print(summary(unemployment_trend))
+
+summary_adf <- summary(unemployment_trend)
+adf_matrix <- matrix(NA, nrow = 3, ncol = 4)
+colnames(adf_matrix) <- c("Statistic","Critical Value (1%)", "Critical Value (5%)", "Critical Value (10%)")
+row.names(adf_matrix) <- c("tau3", "phi2", "phi3")
+
+adf_matrix[1,1] <- unemployment_trend@teststat[1,1]
+adf_matrix[2,1] <- unemployment_trend@teststat[1,2]
+adf_matrix[3,1] <- unemployment_trend@teststat[1,3]
+adf_matrix[1,2] <- summary_adf@cval[1,1]
+adf_matrix[1,3] <- summary_adf@cval[1,2]
+adf_matrix[1,4] <- summary_adf@cval[1,3]
+adf_matrix[2,2] <- summary_adf@cval[2,1]
+adf_matrix[2,3] <- summary_adf@cval[2,2]
+adf_matrix[2,4] <- summary_adf@cval[2,3]
+adf_matrix[3,2] <- summary_adf@cval[3,1]
+adf_matrix[3,3] <- summary_adf@cval[3,2]
+adf_matrix[3,4] <- summary_adf@cval[3,3]
+
+print(adf_matrix)
+
+table_latex <- xtable(
+  adf_matrix,
+  caption = "ADF Test with drift and time trend - Unemployment",
+  label = "ADF Test",
+  align = rep("c", ncol(adf_matrix) + 1),
+  digits = 3
+)
+
+print(table_latex, file = "figures/table_adf_test_unemployment.txt")
+
+#########################################################################
+# First Difference Unemployment
+########################################################################
+
+d.unemployment.ts <- diff(unemployment.ts)
+d.unemployment.ts <- na.omit(d.unemployment.ts)
+
+pdf(file = "figures/figure_autocorrelation_unemployment_diff.pdf", width = 11, height = 8.5)
+Acf(d.unemployment.ts, ylab = "Autocorrelation", main = "Unemployment")
+dev.off()
+
+pdf(file = "figures/figure_partial_autocorrelation_unemployment_diff.pdf", width = 11, height = 8.5)
+pacf(d.unemployment.ts, ylab = "Partial Autocorrelation", main = "Unemployment")
+dev.off()
+
+
+ur.kpss(d.unemployment.ts, type = "tau")@teststat # Sationary
+ur.kpss(d.unemployment.ts, type ="tau")@cval # Stationary
+
+unemployment_diff_trend <- ur.df(
+  y = unemployment.ts,
+  type = "trend",
+  selectlags = "BIC"
+)
+
+print(summary(unemployment_diff_trend))
+
+summary_adf <- summary(unemployment_diff_trend)
+adf_matrix <- matrix(NA, nrow = 3, ncol = 4)
+colnames(adf_matrix) <- c("Statistic","Critical Value (1%)", "Critical Value (5%)", "Critical Value (10%)")
+row.names(adf_matrix) <- c("tau3", "phi2", "phi3")
+
+adf_matrix[1,1] <- unemployment_diff_trend@teststat[1,1]
+adf_matrix[2,1] <- unemployment_diff_trend@teststat[1,2]
+adf_matrix[3,1] <- unemployment_diff_trend@teststat[1,3]
+adf_matrix[1,2] <- summary_adf@cval[1,1]
+adf_matrix[1,3] <- summary_adf@cval[1,2]
+adf_matrix[1,4] <- summary_adf@cval[1,3]
+adf_matrix[2,2] <- summary_adf@cval[2,1]
+adf_matrix[2,3] <- summary_adf@cval[2,2]
+adf_matrix[2,4] <- summary_adf@cval[2,3]
+adf_matrix[3,2] <- summary_adf@cval[3,1]
+adf_matrix[3,3] <- summary_adf@cval[3,2]
+adf_matrix[3,4] <- summary_adf@cval[3,3]
+
+print(adf_matrix)
+
+table_latex <- xtable(
+  adf_matrix,
+  caption = "ADF Test with drift and time trend - First Difference Unemployment",
+  label = "ADF Test",
+  align = rep("c", ncol(adf_matrix) + 1),
+  digits = 3
+)
+
+print(table_latex, file = "figures/table_adf_test_unemployment_diff.txt")
+
+#########################################################################
+# Interest Rate
+########################################################################
+
+pdf(file = "figures/figure_autocorrelation_interest_rate.pdf", width = 11, height = 8.5)
+Acf(interest_rate.ts, ylab = "Autocorrelation", main = "Interest Rate - Selic")
+dev.off()
+
+pdf(file = "figures/figure_partial_autocorrelation_interest_rate.pdf", width = 11, height = 8.5)
+pacf(interest_rate.ts, ylab = "Partial Autocorrelation", main = "Interest Rate - Selic")
+dev.off()
+
+ur.kpss(interest_rate.ts, type = "tau")@teststat # Not Stationary
+ur.kpss(interest_rate.ts, type ="tau")@cval # Not Stationary
+
+interest_rate_trend <- ur.df(
+  y = interest_rate.ts,
+  type = "trend",
+  selectlags = "BIC"
+)
+
+print(summary(interest_rate_trend))
+
+summary_adf <- summary(interest_rate_trend)
+adf_matrix <- matrix(NA, nrow = 3, ncol = 4)
+colnames(adf_matrix) <- c("Statistic","Critical Value (1%)", "Critical Value (5%)", "Critical Value (10%)")
+row.names(adf_matrix) <- c("tau3", "phi2", "phi3")
+
+adf_matrix[1,1] <- interest_rate_trend@teststat[1,1]
+adf_matrix[2,1] <- interest_rate_trend@teststat[1,2]
+adf_matrix[3,1] <- interest_rate_trend@teststat[1,3]
+adf_matrix[1,2] <- summary_adf@cval[1,1]
+adf_matrix[1,3] <- summary_adf@cval[1,2]
+adf_matrix[1,4] <- summary_adf@cval[1,3]
+adf_matrix[2,2] <- summary_adf@cval[2,1]
+adf_matrix[2,3] <- summary_adf@cval[2,2]
+adf_matrix[2,4] <- summary_adf@cval[2,3]
+adf_matrix[3,2] <- summary_adf@cval[3,1]
+adf_matrix[3,3] <- summary_adf@cval[3,2]
+adf_matrix[3,4] <- summary_adf@cval[3,3]
+
+print(adf_matrix)
+
+table_latex <- xtable(
+  adf_matrix,
+  caption = "ADF Test with drift and time trend - Interest Rate/Selic",
+  label = "ADF Test",
+  align = rep("c", ncol(adf_matrix) + 1),
+  digits = 3
+)
+
+print(table_latex, file = "figures/table_adf_test_interest_rate.txt")
+
+#########################################################################################################
+# First Difference of Interest Rate levels series
+#########################################################################################################
+
+d.interest_rate.ts <- diff(interest_rate.ts)
+d.interest_rate.ts <- na.omit(d.interest_rate.ts)
+
+pdf(file = "figures/figure_autocorrelation_interest_rate_diff.pdf", width = 11, height = 8.5)
+Acf(d.interest_rate.ts, ylab = "Autocorrelation", main = "First Difference Interest Rate - Selic")
+dev.off()
+
+pdf(file = "figures/figure_partial_autocorrelation_interest_rate_diff.pdf", width = 11, height = 8.5)
+pacf(d.interest_rate.ts, ylab = "Partial Autocorrelation", main = "First Difference Interest Rate - Selic")
+dev.off()
+
+
+ur.kpss(d.interest_rate.ts, type = "tau")@teststat # Stationary
+ur.kpss(d.interest_rate.ts, type ="tau")@cval # Stationary
+
+interest_rate_trend_diff <- ur.df(
+  y = d.interest_rate.ts,
+  type = "trend",
+  selectlags = "BIC"
+)
+
+print(summary(interest_rate_trend_diff))
+
+summary_adf <- summary(interest_rate_trend_diff)
+adf_matrix <- matrix(NA, nrow = 3, ncol = 4)
+colnames(adf_matrix) <- c("Statistic","Critical Value (1%)", "Critical Value (5%)", "Critical Value (10%)")
+row.names(adf_matrix) <- c("tau3", "phi2", "phi3")
+
+adf_matrix[1,1] <- interest_rate_trend_diff@teststat[1,1]
+adf_matrix[2,1] <- interest_rate_trend_diff@teststat[1,2]
+adf_matrix[3,1] <- interest_rate_trend_diff@teststat[1,3]
+adf_matrix[1,2] <- summary_adf@cval[1,1]
+adf_matrix[1,3] <- summary_adf@cval[1,2]
+adf_matrix[1,4] <- summary_adf@cval[1,3]
+adf_matrix[2,2] <- summary_adf@cval[2,1]
+adf_matrix[2,3] <- summary_adf@cval[2,2]
+adf_matrix[2,4] <- summary_adf@cval[2,3]
+adf_matrix[3,2] <- summary_adf@cval[3,1]
+adf_matrix[3,3] <- summary_adf@cval[3,2]
+adf_matrix[3,4] <- summary_adf@cval[3,3]
+
+print(adf_matrix)
+
+table_latex <- xtable(
+  adf_matrix,
+  caption = "ADF Test with drift and time trend - First Difference Interest Rate/Selic",
+  label = "ADF Test",
+  align = rep("c", ncol(adf_matrix) + 1),
+  digits = 3
+)
+
+print(table_latex, file = "figures/table_adf_test_interest_rate_diff.txt")
+
+#########################################################################
+# IBc-br
+#########################################################################
+
+pdf(file = "figures/figure_autocorrelation_icbr.pdf", width = 11, height = 8.5)
+Acf(ic_br.ts, ylab = "Autocorrelation", main = "IC - Br")
+dev.off()
+
+pdf(file = "figures/figure_partial_autocorrelation_icbr.pdf", width = 11, height = 8.5)
+pacf(ic_br.ts, ylab = "Partial Autocorrelation", main = "IC - Br")
+dev.off()
+
+
+ur.kpss(ic_br.ts, type = "tau")@teststat # Stationary
+ur.kpss(ic_br.ts, type ="tau")@cval # Stationary
+
+ic_br_trend <- ur.df(
+  y = ic_br.ts,
+  type = "trend",
+  selectlags = "BIC"
+)
+
+print(summary(ic_br_trend))
+
+summary_adf <- summary(ic_br_trend)
+adf_matrix <- matrix(NA, nrow = 3, ncol = 4)
+colnames(adf_matrix) <- c("Statistic","Critical Value (1%)", "Critical Value (5%)", "Critical Value (10%)")
+row.names(adf_matrix) <- c("tau3", "phi2", "phi3")
+
+adf_matrix[1,1] <- ic_br_trend@teststat[1,1]
+adf_matrix[2,1] <- ic_br_trend@teststat[1,2]
+adf_matrix[3,1] <- ic_br_trend@teststat[1,3]
+adf_matrix[1,2] <- summary_adf@cval[1,1]
+adf_matrix[1,3] <- summary_adf@cval[1,2]
+adf_matrix[1,4] <- summary_adf@cval[1,3]
+adf_matrix[2,2] <- summary_adf@cval[2,1]
+adf_matrix[2,3] <- summary_adf@cval[2,2]
+adf_matrix[2,4] <- summary_adf@cval[2,3]
+adf_matrix[3,2] <- summary_adf@cval[3,1]
+adf_matrix[3,3] <- summary_adf@cval[3,2]
+adf_matrix[3,4] <- summary_adf@cval[3,3]
+
+print(adf_matrix)
+
+table_latex <- xtable(
+  adf_matrix,
+  caption = "ADF Test with drift and time trend - IC - Br",
+  label = "ADF Test",
+  align = rep("c", ncol(adf_matrix) + 1),
+  digits = 3
+)
+
+print(table_latex, file = "figures/table_adf_test_ic_br.txt")
+
+#########################################################
+# VAR - Inflation, Unemployment, and Interest Rate
+#########################################################
+
+var.SW <- cbind(window(Inflation.ts, start = c(1999,3), end = c(2021, 2)),
+                window(d.unemployment.ts, start = c(1999,3), end = c(2021, 2)),
+                window(d.interest_rate.ts, start = c(1999,3), end = c(2021, 2))) 
+
+var.SW
+
+#########################################################
+# Changing column names
+#########################################################
+
+dimnames(var.SW)[[2]] <- c("Inflation","Unemployment","Selic")
+var.SW
+
+#########################################################
+# VAR Select with a constant term
+#########################################################
+
+VARselect(var.SW, type ="const") # 3 lags AIC/HQ and 1 lag BIC
+
+#########################################################
+# Estimating the VAR(3)
+#########################################################
+
+var.SW.levels <- VAR(var.SW, p = 3, type ="const") 
+summary(var.SW.levels)
+
+#########################################################
+# Granger Causality Test
+#########################################################
+
+# To test if inflation Granger-causes the other variables:
+
+granger_inflation <- causality(var.SW.levels, cause="Inflation")
+print(granger_inflation)
+
+# To test if unemployment Granger-causes the other variables:
+
+granger_unemployment <- causality(var.SW.levels, cause="Unemployment")
+print(granger_unemployment)
+
+# To test if selic Granger-causes the other variables:
+
+granger_selic <- causality(var.SW.levels, cause="Selic")
+print(granger_selic)
+
+#########################################################
+# Serial Correlation Test
+#########################################################
+
+
+serial_result <- serial.test(var.SW.levels) # there isn't enough statistical evidence to reject the null hypothesis.
+                                            # The residuals do not exhibit serial correlation | there is no evidence of autocorrelation in the residuals of the VAR 
+result_df <- data.frame(
+  Test = "Portmanteau Test (asymptotic)",
+  Data = "Residuals of VAR object var.SW.levels",
+  Statistic = serial_result$serial$statistic,
+  df = serial_result$serial$parameter,
+  p_value = serial_result$serial$p.value
+)
+
+latex_output <- xtable(result_df)
+print(latex_output, type = "latex", file = "figures/serial_test_table.txt")
+
+#########################################################
+# Checking the stability of the VAR model
+#########################################################
+
+roots(var.SW.levels) # All the roots lie inside the unt root circle. Therefore, The VAR(3) is stable
+
+#########################################################
+# Residual Normality Test
+#########################################################
+
+normality.test(var.SW.levels)
+
+#########################################################
+# Residual heteroskedasticity test
+#########################################################
+
+arch.test(var.SW.levels)
+
+#################################################################################
+# IRF plots.
+#################################################################################
+
+#################################################################################
+# Plot 1 :  Response of Inflation from shock to Inflation
+#################################################################################
+
+file_path <- "figures/irf_var/irf_plot_Inflation_Inflation.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Inflation", response = "Inflation", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Inflation", response = "Inflation", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Inflation Shock to Inflation")
+dev.off()
+
+#################################################################################
+# Plot 2 : Inflation shock to Unemployment
+#################################################################################
+
+file_path <- "figures/irf_var/irf_plot_Inflation_unemployment.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Inflation", response = "Unemployment", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Inflation", response = "Unemployment", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Inflation Shock to Unemployment")
+dev.off()
+
+#################################################################################
+# Plot 3 : Inflation shock to Selic
+#################################################################################
+
+file_path <- "figures/irf_var/irf_plot_Inflation_selic.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Inflation", response = "Selic", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Inflation", response = "Selic", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Inflation Shock to Selic")
+dev.off()
+
+#################################################################################
+# Plot 4 : Unemployment shock to Inflation
+#################################################################################
+
+file_path <- "figures/irf_var/irf_plot_unemployment_inflation.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Unemployment", response = "Inflation", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Unemployment", response = "Inflation", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Unemployment Shock to Inflation")
+dev.off()
+
+#################################################################################
+# Plot 5 : Unemployment shock to Unemployment
+#################################################################################
+
+file_path <- "figures/irf_var/irf_plot_unemployment_unemployment.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Unemployment", response = "Unemployment", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Unemployment", response = "Unemployment", n.ahead = 24, seed = 1,ci=0.66 ),
+     ylab="Percent",main ="Orthogonal IRF: Unemployment Shock to Unemployment")
+dev.off()
+
+#################################################################################
+# Plot 6 : Unemployment shock to Selic
+#################################################################################
+
+file_path <- "figures/irf_var/irf_plot_unemployment_selic.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Unemployment", response = "Selic", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Unemployment", response = "Selic", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Unemployment Shock to Selic")
+dev.off()
+
+#################################################################################
+# Plot 7 : Selic rate shock to Inflation
+#################################################################################
+
+file_path <- "figures/irf_var/irf_plot_selic_inflation.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Selic", response = "Inflation", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Selic", response = "Inflation", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Selic Shock to Inflation")
+dev.off()
+
+#################################################################################
+# Plot 8 : Selic rate shock to Unemployment
+#################################################################################
+
+file_path <- "figures/irf_var/irf_plot_selic_unemployment.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Selic", response = "Unemployment", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Selic", response = "Unemployment", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Selic Shock to Unemployment")
+dev.off()
+
+#################################################################################
+# Plot 9 : Selic rate shock to Selic Rate
+#################################################################################
+
+file_path <- "figures/irf_var/irf_plot_selic_selic.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Selic", response = "Selic", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Selic", response = "Selic", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Selic shock to Selic")
+dev.off()
+
+#############################################################
+# Ordering: Inflation, Unemployment, Selic
+# Forecast horizon 12
+#############################################################
+# Variance decompositions
+#############################################################
+
+file_path <- "figures/irf_var/variance_decomposition.pdf"
+pdf(file = file_path, width = 8, height = 6)
+plot(fevd(var.SW.levels, n.ahead=12))
+dev.off()
+
+#############################################################
+# Inflation
+#############################################################
+
+fevd(var.SW.levels, n.ahead=12)$Inflation
+
+#############################################################
+# Unemployment
+#############################################################
+
+fevd(var.SW.levels, n.ahead=12)$Unemployment
+
+#############################################################
+# Selic
+#############################################################
+
+fevd(var.SW.levels, n.ahead=12)$Selic
+
+#############################################################
+# Forecast to calculate RMSE and MAE - VAR - Static
+#############################################################
+
+train_length <- floor(0.92 * nrow(data))
+train_data <- data[1:train_length, ]
+test_data <- data[(train_length+1):nrow(data), ]
+
+
+# List of desired forecast horizons
+
+horizons <- c(2, 4, 8)
+
+# Initialize lists to store results
+
+var.hat.list <- list()
+difference.list <- list()
+RMSE.list <- list()
+MAE.list <- list()
+
+# Loop over each forecast horizon
+
+for (h in horizons) {
+
+  var.pred <- predict(var.SW.levels, n.ahead = h)
+  var.hat <- cbind(var.pred$fcst$Inflation[, 1], var.pred$fcst$Unemployment[, 1], var.pred$fcst$Selic[, 1])
+  var.hat.list[[as.character(h)]] <- var.hat
+  
+  test_data_h <- as.matrix(test_data[1:h, c("inflation", "unemployment", "interest_rate")])
+  
+  difference <- var.hat - test_data_h
+  difference.list[[as.character(h)]] <- difference
+  
+  RMSE.list[[as.character(h)]] <- sqrt(colSums(difference^2) / h)
+  
+  MAE.list[[as.character(h)]] <- colSums(abs(difference)) / h
+}
+
+for (h in horizons) {
+  cat(paste0("\nForecast Horizon: ", h, " periods\n"))
+  error.mat <- rbind(RMSE.list[[as.character(h)]], MAE.list[[as.character(h)]])
+  print(error.mat)
+}
+
+#############################################################
+# Forecast to calculate RMSE and MAE - VAR - Dynamic
+#############################################################
+
+train_length <- floor(0.90 * nrow(data))
+end_point <- nrow(data)
+test_length <- end_point - train_length
+
+var.hat.list <- list()
+difference.list <- list()
+RMSE.list <- list()
+MAE.list <- list()
+
+for (t in 1:test_length) {
+  
+  var.SW <- data[1:(train_length + t - 1), c("inflation", "unemployment", "interest_rate")]
+  var.model <- VAR(var.SW, p = 3, type = "const")
+  
+  for (h in horizons) {
+    
+    var.pred <- predict(var.model, n.ahead = h)
+    var.hat <- cbind(var.pred$fcst$inflation[, 1], var.pred$fcst$unemployment[, 1], var.pred$fcst$interest_rate[, 1])
+    
+    if (train_length + t - 1 + h <= end_point) {
+      test_data_h <- as.matrix(data[(train_length + t):(train_length + t + h - 1), c("inflation", "unemployment", "interest_rate")])
+      difference <- var.hat - test_data_h
+      
+      RMSE <- sqrt(colSums(difference^2) / h)
+      MAE <- colSums(abs(difference)) / h
+      
+      cat(paste0("\nIteration: ", t, ", Forecast Horizon: ", h, " periods\n"))
+      error.mat <- rbind(RMSE, MAE)
+      print(error.mat)
+    }
+  }
+}
+
+#############################################################
+# Forecast to calculate RMSE and MAE - Random Walk 
+#############################################################
+
+
+horizons <- c(2, 4, 8)
+RMSE.list <- list()
+MAE.list <- list()
+
+for (h in horizons) {
+  
+  rw_forecast_inflation <- rep(tail(train_data$inflation, 1), h)
+  rw_forecast_unemployment <- rep(tail(train_data$unemployment, 1), h)
+  rw_forecast_selic <- rep(tail(train_data$interest_rate, 1), h)
+  
+  test_data_h <- test_data[1:h, ]
+  
+  rw_difference_inflation <- rw_forecast_inflation - test_data_h$inflation
+  rw_difference_unemployment <- rw_forecast_unemployment - test_data_h$unemployment
+  rw_difference_selic <- rw_forecast_selic - test_data_h$interest_rate
+  
+  RMSE <- c(
+    Inflation = sqrt(mean(rw_difference_inflation^2)),
+    Unemployment = sqrt(mean(rw_difference_unemployment^2)),
+    Selic = sqrt(mean(rw_difference_selic^2))
+  )
+  
+  MAE <- c(
+    Inflation = mean(abs(rw_difference_inflation)),
+    Unemployment = mean(abs(rw_difference_unemployment)),
+    Selic = mean(abs(rw_difference_selic))
+  )
+  
+  RMSE.list[[as.character(h)]] <- RMSE
+  MAE.list[[as.character(h)]] <- MAE
+}
+
+for (h in horizons) {
+  cat(paste0("\nForecast Horizon: ", h, " periods\n"))
+  error.mat <- rbind(RMSE.list[[as.character(h)]], MAE.list[[as.character(h)]])
+  print(error.mat)
+}
+
+#############################################################
+# Forecast to calculate RMSE and MAE - ARIMA(x,y,z)
+#############################################################
+
+
+# Choosing the best ARIMA Models
+
+auto.arima(train_data$inflation, d=0, stepwise=FALSE, approximation=FALSE, trace=TRUE, ic=c("aicc", "aic", "bic")) # MA(1)
+auto.arima(train_data$unemployment, d=1, stepwise=FALSE, approximation=FALSE, trace=TRUE, ic=c("aicc", "aic", "bic")) # ARIMA(3,1,0)
+auto.arima(train_data$interest_rate, d=1, stepwise=FALSE, approximation=FALSE, trace=TRUE, ic=c("aicc", "aic", "bic")) # ARIMA(2,1,0)
+
+
+# Fit ARIMA models to training data
+arma_models <- list()
+arma_models$inflation <- arima(train_data$inflation, order = c(0, 0, 1))
+arma_models$unemployment <- arima(train_data$unemployment, order = c(3, 1, 0))
+arma_models$selic <- arima(train_data$interest_rate, order = c(2, 1, 0))
+
+# Define horizons
+horizons <- c(2, 4, 8)
+
+# Placeholder lists to store RMSE and MAE for each horizon
+RMSE_list <- list()
+MAE_list <- list()
+
+# Loop over each forecast horizon
+for (h in horizons) {
+  
+  arma_forecasts <- list()
+  arma_forecasts$inflation <- predict(arma_models$inflation, n.ahead = h)$pred
+  arma_forecasts$unemployment <- predict(arma_models$unemployment, n.ahead = h)$pred
+  arma_forecasts$selic <- predict(arma_models$selic, n.ahead = h)$pred
+  
+  arma_hats <- cbind(as.numeric(arma_forecasts$inflation), 
+                     as.numeric(arma_forecasts$unemployment), 
+                     as.numeric(arma_forecasts$selic))
+  
+  RMSE <- sqrt(colSums((arma_hats - as.matrix(test_data[1:h, c("inflation", "unemployment", "interest_rate")]))^2) / h)
+  MAE <- colSums(abs(arma_hats - as.matrix(test_data[1:h, c("inflation", "unemployment", "interest_rate")]))) / h
+  
+  RMSE_list[[as.character(h)]] <- RMSE
+  MAE_list[[as.character(h)]] <- MAE
+}
+
+for (h in horizons) {
+  cat(paste0("\nForecast Horizon: ", h, " periods\n"))
+  error.mat <- rbind(RMSE = RMSE_list[[as.character(h)]], MAE = MAE_list[[as.character(h)]])
+  print(error.mat)
+}
+
+#########################################################
+# VAR - Inflation, Unemployment, Interest Rate, and IC-Br
+#########################################################
+
+var.SW <- cbind(window(ic_br.ts, start = c(1999,3), end = c(2021, 2)),
+                window(d.interest_rate.ts, start = c(1999,3), end = c(2021, 2)),
+                window(d.unemployment.ts, start = c(1999,3), end = c(2021, 2)),
+                window(Inflation.ts, start = c(1999,3), end = c(2021, 2))) 
+
+var.SW
+
+#########################################################
+# Changing column names
+#########################################################
+
+dimnames(var.SW)[[2]] <- c("IC_Br","Selic","Unemployment", "Inflation")
+var.SW
+
+#########################################################
+# VAR Select with a constant term
+#########################################################
+
+VARselect(var.SW, type ="const") # 3 lags AIC and 1 lag BIC
+
+#########################################################
+# Estimating the VAR(3)
+#########################################################
+
+var.SW.levels <- VAR(var.SW, p = 3, type ="const") 
+summary(var.SW.levels)
+
+#########################################################
+# Granger Causality Test
+#########################################################
+
+# To test if inflation Granger-causes the other variables:
+
+granger_inflation <- causality(var.SW.levels, cause="Inflation")
+print(granger_inflation)
+
+# To test if unemployment Granger-causes the other variables:
+
+granger_unemployment <- causality(var.SW.levels, cause="Unemployment")
+print(granger_unemployment)
+
+# To test if selic Granger-causes the other variables:
+
+granger_selic <- causality(var.SW.levels, cause="Selic")
+print(granger_selic)
+
+# To test if IC-Br Granger-causes the other variables:
+
+granger_selic <- causality(var.SW.levels, cause="IC_Br")
+print(granger_selic)
+
+#########################################################
+# Serial Correlation Test
+#########################################################
+
+serial_result <- serial.test(var.SW.levels) # there isn't enough statistical evidence to reject the null hypothesis.
+
+# The residuals do not exhibit serial correlation | the residuals appear to be white noise
+result_df <- data.frame(
+  Test = "Portmanteau Test (asymptotic)",
+  Data = "Residuals of VAR object var.SW.levels",
+  Statistic = serial_result$serial$statistic,
+  df = serial_result$serial$parameter,
+  p_value = serial_result$serial$p.value
+)
+
+latex_output <- xtable(result_df)
+print(latex_output, type = "latex", file = "figures/serial_test_table_var_2.txt")
+
+#########################################################
+# Checking the stability of the VAR model
+#########################################################
+
+roots(var.SW.levels) # All the roots lie inside the unit root circle. Therefore, The VAR(3) is stable
+
+#########################################################
+# Residual Normality Test
+#########################################################
+
+normality.test(var.SW.levels) # The tests suggest that the residuals from the VAR model 
+                              # saved in var.SW.levels are not multivariate normally distributed.
+
+#########################################################
+# Residual heteroskedasticity test
+#########################################################
+
+arch.test(var.SW.levels) #the test result suggests that there might be conditional 
+                        # heteroskedasticity (volatility clustering) in the residuals of the VAR model
+
+#################################################################################
+# IRF plots.
+#################################################################################
+
+#################################################################################
+# Plot 1 :  Response of Inflation from shock to Inflation
+#################################################################################
+
+file_path <- "figures/irf_var2/irf_plot_inflation_inflation.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Inflation", response = "Inflation", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Inflation", response = "Inflation", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Inflation Shock to Inflation")
+dev.off()
+
+#################################################################################
+# Plot 2 : Inflation shock to Unemployment
+#################################################################################
+
+file_path <- "figures/irf_var2/irf_plot_inflation_unemployment.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Inflation", response = "Unemployment", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Inflation", response = "Unemployment", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Inflation Shock to Unemployment")
+dev.off()
+
+#################################################################################
+# Plot 3 : Inflation shock to Selic
+#################################################################################
+
+file_path <- "figures/irf_var2/irf_plot_inflation_selic.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Inflation", response = "Selic", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Inflation", response = "Selic", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Inflation Shock to Selic")
+dev.off()
+
+#################################################################################
+# Plot 4 : Inflation shock to IC-Br
+#################################################################################
+
+file_path <- "figures/irf_var2/irf_plot_inflation_ic_br.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Inflation", response = "IC_Br", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Inflation", response = "IC_Br", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Inflation Shock to IC-Br")
+dev.off()
+
+#################################################################################
+# Plot 5 : Unemployment shock to Inflation
+#################################################################################
+
+file_path <- "figures/irf_var2/irf_plot_unemployment_inflation.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Unemployment", response = "Inflation", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Unemployment", response = "Inflation", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Unemployment Shock to Inflation")
+dev.off()
+
+#################################################################################
+# Plot 6 : Unemployment shock to Unemployment
+#################################################################################
+
+file_path <- "figures/irf_var2/irf_plot_unemployment_unemployment.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Unemployment", response = "Unemployment", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Unemployment", response = "Unemployment", n.ahead = 24, seed = 1,ci=0.66 ),
+     ylab="Percent",main ="Orthogonal IRF: Unemployment Shock to Unemployment")
+dev.off()
+
+#################################################################################
+# Plot 7 : Unemployment shock to Selic
+#################################################################################
+
+file_path <- "figures/irf_var2/irf_plot_unemployment_selic.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Unemployment", response = "Selic", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Unemployment", response = "Selic", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Unemployment Shock to Selic")
+dev.off()
+
+#################################################################################
+# Plot 8 : Unemployment shock to IC-Br
+#################################################################################
+
+file_path <- "figures/irf_var2/irf_plot_unemployment_ic_br.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Unemployment", response = "IC_Br", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Unemployment", response = "IC_Br", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Unemployment Shock to IC-Br")
+dev.off()
+
+#################################################################################
+# Plot 9 : Selic rate shock to Inflation
+#################################################################################
+
+file_path <- "figures/irf_var2/irf_plot_selic_inflation.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Selic", response = "Inflation", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Selic", response = "Inflation", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Selic Shock to Inflation")
+dev.off()
+
+#################################################################################
+# Plot 10 : Selic rate shock to Unemployment
+#################################################################################
+
+file_path <- "figures/irf_var2/irf_plot_selic_unemployment.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Selic", response = "Unemployment", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Selic", response = "Unemployment", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Selic Shock to Unemployment")
+dev.off()
+
+#################################################################################
+# Plot 11 : Selic rate shock to Selic Rate
+#################################################################################
+
+file_path <- "figures/irf_var2/irf_plot_selic_selic.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Selic", response = "Selic", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Selic", response = "Selic", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Selic shock to Selic")
+dev.off()
+
+#################################################################################
+# Plot 12 : Selic rate shock to IC-Br
+#################################################################################
+
+file_path <- "figures/irf_var2/irf_plot_selic_ic_br.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="Selic", response = "IC_Br", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="Selic", response = "IC_Br", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: Selic shock to IC-Br")
+dev.off()
+
+#################################################################################
+# Plot 13 : Ic-Br rate shock to Inflation
+#################################################################################
+
+file_path <- "figures/irf_var2/irf_plot_ic_br_inflation.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="IC_Br", response = "Inflation", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="IC_Br", response = "Inflation", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: IC-Br shock to Inflation")
+dev.off()
+
+#################################################################################
+# Plot 14 : Ic-Br rate shock to Unemployment
+#################################################################################
+
+file_path <- "figures/irf_var2/irf_plot_ic_br_unemployment.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="IC_Br", response = "Unemployment", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="IC_Br", response = "Unemployment", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: IC-Br shock to Unemployment")
+dev.off()
+
+#################################################################################
+# Plot 15 : Ic-Br rate shock to Selic
+#################################################################################
+
+file_path <- "figures/irf_var2/irf_plot_ic_br_selic.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="IC_Br", response = "Selic", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="IC_Br", response = "Selic", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: IC-Br shock to Selic")
+dev.off()
+
+#################################################################################
+# Plot 16 : Ic-Br rate shock to IC-Br
+#################################################################################
+
+file_path <- "figures/irf_var2/irf_plot_ic_br_ic_br.pdf"
+pdf(file = file_path, width = 8, height = 6)
+irf(var.SW.levels, impulse ="IC_Br", response = "IC_Br", n.ahead = 24, seed = 1)
+plot(irf(var.SW.levels, impulse ="IC_Br", response = "IC_Br", n.ahead = 24, seed = 1, ci=0.66),
+     ylab="Percent",main ="Orthogonal IRF: IC-Br shock to IC-Br")
+dev.off()
+
+#############################################################
+# Ordering: IC-Br, Selic, Unemployment, Inflation
+# Forecast horizon 12
+#############################################################
+# Variance decompositions
+#############################################################
+
+plot(fevd(var.SW.levels, n.ahead=12))
+
+png("figures/irf_var2/fevd_plot_var_all.png")
+plot(fevd(var.SW.levels, n.ahead=12))
+dev.off()
+
+#############################################################
+# Inflation
+#############################################################
+
+fevd(var.SW.levels, n.ahead=12)$Inflation
+
+#############################################################
+# Unemployment
+#############################################################
+
+fevd(var.SW.levels, n.ahead=12)$Unemployment
+
+#############################################################
+# Selic
+#############################################################
+
+fevd(var.SW.levels, n.ahead=12)$Selic
+
+#############################################################
+# IC-Br
+#############################################################
+
+fevd(var.SW.levels, n.ahead=12)$IC_Br
+
+#############################################################
+# Forecast to calculate RMSE and MAE - VAR(3) New
+#############################################################
+
+train_length <- floor(0.92 * nrow(data))
+train_data <- data[1:train_length, ]
+test_data <- data[(train_length+1):nrow(data), ]
+
+
+# List of desired forecast horizons
+
+horizons <- c(2, 4, 8)
+
+# Initialize lists to store results
+
+var.hat.list <- list()
+difference.list <- list()
+RMSE.list <- list()
+MAE.list <- list()
+
+# Loop over each forecast horizon
+
+for (h in horizons) {
+  
+  var.pred <- predict(var.SW.levels, n.ahead = h)
+  var.hat <- cbind(var.pred$fcst$IC_Br[, 1], var.pred$fcst$Selic[, 1], var.pred$fcst$Unemployment[, 1], var.pred$fcst$Inflation[, 1])
+  var.hat.list[[as.character(h)]] <- var.hat
+  
+  test_data_h <- as.matrix(test_data[1:h, c("inflation", "unemployment", "interest_rate", "ic_br")])
+  
+  difference <- var.hat - test_data_h
+  difference.list[[as.character(h)]] <- difference
+  
+  RMSE.list[[as.character(h)]] <- sqrt(colSums(difference^2) / h)
+  
+  MAE.list[[as.character(h)]] <- colSums(abs(difference)) / h
+}
+
+for (h in horizons) {
+  cat(paste0("\nForecast Horizon: ", h, " periods\n"))
+  error.mat <- rbind(RMSE.list[[as.character(h)]], MAE.list[[as.character(h)]])
+  print(error.mat)
+}
+
+#############################################################
+# Forecast to calculate RMSE and MAE - VAR - Dynamic
+#############################################################
+
+train_length <- floor(0.90 * nrow(data))
+end_point <- nrow(data)
+test_length <- end_point - train_length
+
+var.hat.list <- list()
+difference.list <- list()
+RMSE.list <- list()
+MAE.list <- list()
+
+for (t in 1:test_length) {
+  
+  var.SW <- data[1:(train_length + t - 1), c("inflation", "unemployment", "interest_rate", "ic_br")]
+  var.model <- VAR(var.SW, p = 3, type = "const")
+  
+  for (h in horizons) {
+    
+    var.pred <- predict(var.model, n.ahead = h)
+    var.hat <- cbind(var.pred$fcst$ic_br[, 1], var.pred$fcst$interest_rate[, 1], var.pred$fcst$unemployment[, 1], var.pred$fcst$inflation[, 1])
+    
+    if (train_length + t - 1 + h <= end_point) {
+      test_data_h <- as.matrix(data[(train_length + t):(train_length + t + h - 1), c("inflation", "unemployment", "interest_rate", "ic_br")])
+      difference <- var.hat - test_data_h
+      
+      RMSE <- sqrt(colSums(difference^2) / h)
+      MAE <- colSums(abs(difference)) / h
+      
+      cat(paste0("\nIteration: ", t, ", Forecast Horizon: ", h, " periods\n"))
+      error.mat <- rbind(RMSE, MAE)
+      print(error.mat)
+    }
+  }
+}
+
+#############################################################
+# Forecast to calculate RMSE and MAE - Random Walk 
+#############################################################
+
+train_length <- floor(0.92 * nrow(data))
+train_data <- data[1:train_length, ]
+test_data <- data[(train_length+1):nrow(data), ]
+
+horizons <- c(2, 4, 8)
+RMSE.list <- list()
+MAE.list <- list()
+
+for (h in horizons) {
+  
+  rw_forecast_inflation <- rep(tail(train_data$inflation, 1), h)
+  rw_forecast_unemployment <- rep(tail(train_data$unemployment, 1), h)
+  rw_forecast_selic <- rep(tail(train_data$interest_rate, 1), h)
+  rw_forecast_IC_Br <- rep(tail(train_data$ic_br, 1), h)
+  
+  test_data_h <- test_data[1:h, ]
+  
+  rw_difference_inflation <- rw_forecast_inflation - test_data_h$inflation
+  rw_difference_unemployment <- rw_forecast_unemployment - test_data_h$unemployment
+  rw_difference_selic <- rw_forecast_selic - test_data_h$interest_rate
+  rw_difference_IC_Br <- rw_forecast_IC_Br - test_data_h$ic_br
+  
+  RMSE <- c(
+    Inflation = sqrt(mean(rw_difference_inflation^2)),
+    Unemployment = sqrt(mean(rw_difference_unemployment^2)),
+    Selic = sqrt(mean(rw_difference_selic^2)),
+    IC_Br = sqrt(mean(rw_difference_IC_Br^2))
+  )
+  
+  MAE <- c(
+    Inflation = mean(abs(rw_difference_inflation)),
+    Unemployment = mean(abs(rw_difference_unemployment)),
+    Selic = mean(abs(rw_difference_selic)),
+    IC_Br = mean(abs(rw_difference_IC_Br))
+  )
+  
+  RMSE.list[[as.character(h)]] <- RMSE
+  MAE.list[[as.character(h)]] <- MAE
+}
+
+for (h in horizons) {
+  cat(paste0("\nForecast Horizon: ", h, " periods\n"))
+  error.mat <- rbind(RMSE.list[[as.character(h)]], MAE.list[[as.character(h)]])
+  print(error.mat)
+}
+
+#############################################################
+# Forecast to calculate RMSE and MAE - ARIMA(x,y,z)
+#############################################################
+
+# Fit ARIMA models to training data
+arma_models <- list()
+arma_models$inflation <- arima(train_data$inflation, order = c(0, 0, 1))
+arma_models$unemployment <- arima(train_data$unemployment, order = c(3, 1, 0))
+arma_models$selic <- arima(train_data$interest_rate, order = c(2, 1, 0))
+arma_models$ic_br <- arima(train_data$ic_br, order = c(1, 0, 0))
+
+# Define horizons
+horizons <- c(2, 4, 8)
+
+# Placeholder lists to store RMSE and MAE for each horizon
+RMSE_list <- list()
+MAE_list <- list()
+
+# Loop over each forecast horizon
+for (h in horizons) {
+  
+  arma_forecasts <- list()
+  arma_forecasts$inflation <- predict(arma_models$inflation, n.ahead = h)$pred
+  arma_forecasts$unemployment <- predict(arma_models$unemployment, n.ahead = h)$pred
+  arma_forecasts$selic <- predict(arma_models$selic, n.ahead = h)$pred
+  arma_forecasts$ic_br <- predict(arma_models$ic_br, n.ahead = h)$pred
+  
+  arma_hats <- cbind(as.numeric(arma_forecasts$inflation), 
+                     as.numeric(arma_forecasts$unemployment), 
+                     as.numeric(arma_forecasts$selic),
+                     as.numeric(arma_forecasts$ic_br))
+  
+  RMSE <- sqrt(colSums((arma_hats - as.matrix(test_data[1:h, c("inflation", "unemployment", "interest_rate", "ic_br")]))^2) / h)
+  MAE <- colSums(abs(arma_hats - as.matrix(test_data[1:h, c("inflation", "unemployment", "interest_rate", "ic_br")]))) / h
+  
+  RMSE_list[[as.character(h)]] <- RMSE
+  MAE_list[[as.character(h)]] <- MAE
+}
+
+for (h in horizons) {
+  cat(paste0("\nForecast Horizon: ", h, " periods\n"))
+  error.mat <- rbind(RMSE = RMSE_list[[as.character(h)]], MAE = MAE_list[[as.character(h)]])
+  print(error.mat)
+}
